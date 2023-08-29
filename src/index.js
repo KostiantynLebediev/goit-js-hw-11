@@ -1,102 +1,109 @@
-import { Report } from 'notiflix/build/notiflix-report-aio';
+import './css/styles.css';
+import { fetchImages } from './fetchImages';
+import Notiflix from 'notiflix';
 import SimpleLightbox from 'simplelightbox';
 import 'simplelightbox/dist/simple-lightbox.min.css';
-import InfiniteScroll from 'infinite-scroll';
-import { fetchImages, PER_PAGE, API_KEY, BASE_URL } from './js/search-api';
-import createMarkup from './js/template/createMarkup';
-import refs from './js/refs';
 
-refs.formEl.addEventListener('submit', onSubmitSearch);
+let gallerySimpleLightbox = new SimpleLightbox('.gallery a');
 
-let currentPage = 1;
-let value = '';
-let totalHitsImg = 0;
+const form = document.getElementById('search-form');
+const gallery = document.querySelector('.gallery');
+const button = document.querySelector('.Load-more');
 
-// loading image
-function onload() {
-  currentPage += 1;
-  getImage();
-}
+button.style.display = 'none';
+form.addEventListener('submit', handleSubmit);
+button.addEventListener('click', clickBtn);
 
-//search form
-function onSubmitSearch(e) {
+let page = 1;
+
+async function handleSubmit(e) {
   e.preventDefault();
-  value = e.currentTarget.elements.searchQuery.value.trim();
-  if (!value) {
-    message('Please write correct data!');
+  let inputValue = form.elements.searchQuery.value.trim();
+  page = 1;
+  cleanGallary();
+
+  if (inputValue === '') {
+    return;
+  }
+  if (!inputValue) {
+    Notiflix.Notify.failure('Please, fill search field');
+    cleanGallary();
+
+    button.style.display = 'block';
     return;
   }
 
-  clearGallery();
-  getImage();
-}
-
-async function getImage() {
   try {
-    const resp = await fetchImages(currentPage, value);
-    refs.galleryWrapperEl.insertAdjacentHTML(
-      'beforeend',
-      createMarkup(resp.hits)
-    );
-    //библиотека лайбокс и уведомление
-    lightbox.refresh();
+    const pages = await fetchImages(inputValue, page);
 
-    //если неправильный запрос
-    if (resp.total === 0) {
-      message('Please write correct data!');
-      return;
-    }
-    totalHitsImg += resp.hits.length;
+    let totalPage = pages.data.totalHits;
 
-    if (totalHitsImg === resp.totalHits || totalHitsImg < 40) {
-      refs.spanEl.textContent =
-        'Were sorry, but you ve reached the end of search results.';
-      return;
-    }
-    if (totalHitsImg > 40) {
-      const { height: cardHeight } =
-        refs.galleryWrapperEl.firstElementChild.getBoundingClientRect();
-
-      window.scrollBy({
-        top: cardHeight * 2,
-        behavior: 'smooth',
-      });
-    }
+    renderCountry(pages.data.hits);
+    gallerySimpleLightbox.refresh();
+    button.style.display = 'block';
+    Notiflix.Notify.success(`Hooray! We found ${totalPage} images.`);
   } catch (error) {
-    Report.failure('404', '');
-    console.error(error);
+    Notiflix.Notify.failure(
+      'Sorry, there are no images matching your search query. Please try again.'
+    );
   }
 }
 
-//infiniti scroll
-const infiniteScroll = new InfiniteScroll(refs.galleryWrapperEl, {
-  responseType: 'json',
-  history: false,
-  status: '.scroll-status',
-  path: function () {
-    return `${BASE_URL}?key=${API_KEY}&q=${value}&image_type=photo&orientation=horizontal&safesearch=true&per_page=${PER_PAGE}&page=${currentPage}`;
-  },
-});
+async function clickBtn() {
+  page++;
 
-infiniteScroll.on('load', onload);
+  let inputValue = form.elements.searchQuery.value.trim();
 
-infiniteScroll.on('error', () => {
-  Report.failure('404', '');
-});
+  try {
+    const pages = await fetchImages(inputValue, page);
 
-function message(sms) {
-  Report.warning(`Warning!`, `${sms}`);
+    const pageAll = pages.data.totalHits;
+    if (page > pageAll) {
+      Notiflix.Notify.info(
+        'Were sorry, but you ve reached the end of search results.'
+      );
+      button.style.display = 'none';
+      form.reset();
+    }
+    renderCountry(pages.data.hits);
+    gallerySimpleLightbox.refresh();
+    button.style.display = 'block';
+  } catch (error) {
+    Notiflix.Notify.failure(
+      'Sorry, there are no images matching your search query. Please try again.'
+    );
+  }
 }
-let lightbox = new SimpleLightbox('.gallery a', {
-  captions: true,
-  captionsData: 'alt',
-  captionPosition: 'bottom',
-  captionDelay: 250,
-});
 
-function clearGallery() {
-  totalHitsImg = 0;
-  currentPage = 1;
-  refs.spanEl.innerHTML = '';
-  refs.galleryWrapperEl.innerHTML = '';
+function renderCountry(users) {
+  const markup = users
+    .map(image => {
+      return `<div class="photo-card">
+      <a href="${image.largeImageURL}"><img class="photo" src="${image.webformatURL}" alt="${image.tags}" loading="lazy" width='200'/>
+      <div class="info">
+      <p class="info-item">
+<b>Likes</b> <span class="info-item-api"> ${image.likes} </span>
+</p>
+       <p class="info-item">
+           <b>Views</b> <span class="info-item-api">${image.views}</span>  
+       </p>
+       <p class="info-item">
+           <b>Comments</b> <span class="info-item-api">${image.comments}</span>  
+       </p>
+       <p class="info-item">
+           <b>Downloads</b> <span class="info-item-api">${image.downloads}</span> 
+       </p>
+    </div>
+      </a>
+    
+    </div>
+    `;
+    })
+    .join('');
+  return gallery.insertAdjacentHTML('beforeend', markup);
+}
+
+function cleanGallary() {
+  gallery.innerHTML = '';
+  button.style.display = 'none';
 }
